@@ -37,7 +37,7 @@ public class WebClientConfig {
      * @return WebClient bean
      */
     @Bean
-    @LoadBalanced
+    @LoadBalanced // ← ESTO es crucial para que Eureka funcione
     public WebClient webClient() {
         log.info("Inicializando WebClient con Eureka LoadBalancer");
 

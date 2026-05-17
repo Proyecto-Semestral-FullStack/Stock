@@ -9,18 +9,19 @@ import cl.dsy1103.ms_stock.exception.CatalogoException;
 import reactor.util.retry.Retry;
 
 import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 
 /**
- * Cliente para comunicarse con ms-catalogo.
+ * Cliente para comunicarse con ms-catalogo mediante WebClient.
  *
- * Responsabilidades:
- * - Llamar a ms-catalogo
- * - Manejar errores de conexión
- * - Reintentos automáticos
- * - Logging de llamadas
- *
- * @Component: Spring lo inyecta automáticamente en services
- * @Slf4j: Logger automático de Lombok
+ * ¿Cómo funciona?:
+ * 1. Spring inyecta el WebClient (con @LoadBalanced) de WebClientConfig
+ * 2. Este client consulta propiedades de application.properties
+ * 3. Construye la URL: http://ms-catalogo/catalogo/productos/{id}
+ * 4. Eureka automáticamente resuelve "ms-catalogo" → localhost:8082
+ * 5. Realiza la llamada HTTP GET
+ * 6. Convierte el JSON a ProductoDTO
+ * 7. Maneja errores
  */
 @Component
 @Slf4j
@@ -28,7 +29,7 @@ public class CatalogoClient {
 
     private final WebClient webClient;
 
-    // Inyectamos valores del application.yml
+    // Valores inyectados desde application.properties
     @Value("${app.catalogo.url}")
     private String catalogoUrl;
 
@@ -39,45 +40,46 @@ public class CatalogoClient {
     private String endpointProductoPorId;
 
     /**
-     * Constructor que recibe WebClient por inyección.
-     *
-     * @param webClient bean que creamos en WebClientConfig
+     * Constructor que recibe WebClient inyectado por Spring.
      */
     public CatalogoClient(WebClient webClient) {
         this.webClient = webClient;
     }
 
     /**
-     * Obtener información de un producto desde ms-catalogo.
+     * Obtener producto de ms-catalogo.
      *
      * Flujo:
-     * 1. Construye la URL: http://ms-catalogo/catalogo/productos/5
-     * 2. Hace GET request
-     * 3. Convierte a ProductoDTO
-     * 4. Reintenta 3 veces si falla
-     * 5. Maneja errores
+     * 1. Reemplaza {id} en el endpoint
+     * 2. Construye URL completa: http://ms-catalogo/catalogo/productos/5
+     * 3. Hace GET request con timeout y retry
+     * 4. Convierte JSON a ProductoDTO
+     * 5. Si falla, lanza CatalogoException
      *
-     * @param productoId ID del producto
+     * @param productoId ID del producto a consultar
      * @return ProductoDTO con datos del producto
-     * @throws CatalogoException si no encuentra o hay error
+     * @throws CatalogoException si no existe o hay error de conexión
      */
     public ProductoDTO obtenerProducto(Long productoId) {
         log.debug("Consultando ms-catalogo para producto ID: {}", productoId);
 
         try {
-            // Construir URL dinámica: /catalogo/productos/{id}
+            // Construir URL dinámica reemplazando {id}
             String uri = endpointProductoPorId.replace("{id}", productoId.toString());
+            String urlCompleta = catalogoUrl + uri;
+
+            log.debug("URL construida: {}", urlCompleta);
 
             ProductoDTO producto = webClient
                     .get()
-                    .uri(catalogoUrl + uri)  // URL completa: http://ms-catalogo/catalogo/productos/5
-                    .retrieve()               // Ejecutar request
-                    .bodyToMono(ProductoDTO.class)  // Convertir respuesta a ProductoDTO
-                    .timeout(Duration.ofSeconds(timeoutSegundos))  // Timeout de 5 seg
-                    .retry(3)  // Reintentar 3 veces si falla
-                    .block();  // Esperar respuesta (bloqueante)
+                    .uri(urlCompleta)  // URL completa: http://ms-catalogo/catalogo/productos/5
+                    .retrieve()         // Ejecutar request
+                    .bodyToMono(ProductoDTO.class)  // Convertir JSON a ProductoDTO
+                    .timeout(Duration.of(timeoutSegundos, ChronoUnit.SECONDS))  // Timeout
+                    .retry(2)  // Reintentar 2 veces si falla
+                    .block();  // Esperar la respuesta (bloqueante)
 
-            log.info("Producto obtenido correctamente: {}", productoId);
+            log.info("Producto obtenido correctamente de ms-catalogo: {}", productoId);
             return producto;
 
         } catch (WebClientResponseException.NotFound e) {
@@ -94,12 +96,12 @@ public class CatalogoClient {
                     e.getResponseBodyAsString()
             );
             throw new CatalogoException(
-                    "Error al consultar ms-catalogo: " + e.getMessage(),
+                    "Error al consultar ms-catalogo: " + e.getStatusCode(),
                     e
             );
 
         } catch (Exception e) {
-            // Timeout, conexión rechazada, etc
+            // Timeout, conexión rechazada, Eureka no resolvió el nombre, etc.
             log.error("Error comunicándose con ms-catalogo", e);
             throw new CatalogoException(
                     "No se puede conectar con ms-catalogo: " + e.getMessage(),
@@ -109,17 +111,14 @@ public class CatalogoClient {
     }
 
     /**
-     * DTO para recibir datos de ms-catalogo.
+     * DTO para recibir respuesta JSON de ms-catalogo.
      *
-     * Representa la respuesta JSON de ms-catalogo.
-     * Solo incluimos los campos que nos importan.
-     *
-     * Ejemplo de respuesta de ms-catalogo:
+     * Las propiedades deben coincidir exactamente con la respuesta JSON.
+     * Ejemplo de respuesta:
      * {
      *   "id": 5,
      *   "nombre": "Laptop",
      *   "precio": 1200.00,
-     *   "stock": 50,
      *   "categoria": "Electrónica"
      * }
      */
@@ -129,7 +128,7 @@ public class CatalogoClient {
         private Double precio;
         private String categoria;
 
-        // Constructores
+        // Constructores vacío y completo
         public ProductoDTO() {}
 
         public ProductoDTO(Long id, String nombre, Double precio, String categoria) {
@@ -139,34 +138,33 @@ public class CatalogoClient {
             this.categoria = categoria;
         }
 
-        // Getters
+        // Getters y Setters (necesarios para deserialización JSON)
         public Long getId() {
             return id;
+        }
+
+        public void setId(Long id) {
+            this.id = id;
         }
 
         public String getNombre() {
             return nombre;
         }
 
-        public Double getPrecio() {
-            return precio;
-        }
-
-        public String getCategoria() {
-            return categoria;
-        }
-
-        // Setter (para deserialización de JSON)
-        public void setId(Long id) {
-            this.id = id;
-        }
-
         public void setNombre(String nombre) {
             this.nombre = nombre;
         }
 
+        public Double getPrecio() {
+            return precio;
+        }
+
         public void setPrecio(Double precio) {
             this.precio = precio;
+        }
+
+        public String getCategoria() {
+            return categoria;
         }
 
         public void setCategoria(String categoria) {
