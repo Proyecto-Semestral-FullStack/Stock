@@ -1,0 +1,61 @@
+# Puerto de la aplicaci�n
+server:
+  port: 8083  # ms-stock escucha en puerto 8083
+
+# Nombre del microservicio (IMPORTANTE para Eureka)
+spring:
+  application:
+    name: ms-stock
+  
+  # Base de datos MySQL
+  datasource:
+    url: jdbc:mysql://localhost:3306/ms_stock?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  
+  # JPA / Hibernate
+  jpa:
+    hibernate:
+      ddl-auto: update  # Crea/actualiza tablas autom�ticamente
+    show-sql: false     # No mostrar SQL en consola (poner true para debug)
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+
+# Eureka Client Configuration
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://localhost:8761/eureka/  # URL de tu servidor Eureka
+  instance:
+    preferIpAddress: true  # Usar IP en lugar de hostname
+
+    # Nombre de instancia en Eureka (para debugging)
+    instance-id: ${spring.application.name}:${spring.application.instance_id:${random.value}}
+
+# Logging
+logging:
+  level:
+    root: INFO
+    cl.dsy1103.ms_stock: DEBUG  # M�s detalles de nuestro c�digo
+    org.springframework.web.reactive.function.client: DEBUG  # Ver llamadas WebClient
+
+# ============================================
+# CONFIGURACI�N DE MICROSERVICIOS EXTERNOS
+# ============================================
+app:
+  # ms-catalogo (el otro microservicio)
+  catalogo:
+    # URL: Si usas Eureka, usa el nombre del servicio
+    # Si NO usas Eureka, usa URL directa
+    url: http://ms-catalogo  # ? Con Eureka
+    # url: http://localhost:8082  # ? Sin Eureka (comentado)
+
+    # Timeout para llamadas a ms-catalogo (en segundos)
+    timeout: 5
+
+    # Endpoint para obtener producto por ID
+    endpoint:
+      producto-por-id: /catalogo/productos/{id}
