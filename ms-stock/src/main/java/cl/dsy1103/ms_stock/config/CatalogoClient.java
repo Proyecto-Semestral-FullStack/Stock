@@ -8,6 +8,7 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import cl.dsy1103.ms_stock.exception.CatalogoException;
 import reactor.util.retry.Retry;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 
@@ -125,13 +126,13 @@ public class CatalogoClient {
     public static class ProductoDTO {
         private Long id;
         private String nombre;
-        private Double precio;
+        private BigDecimal precio;
         private String categoria;
 
         // Constructores vacío y completo
         public ProductoDTO() {}
 
-        public ProductoDTO(Long id, String nombre, Double precio, String categoria) {
+        public ProductoDTO(Long id, String nombre, BigDecimal precio, String categoria) {
             this.id = id;
             this.nombre = nombre;
             this.precio = precio;
@@ -155,11 +156,11 @@ public class CatalogoClient {
             this.nombre = nombre;
         }
 
-        public Double getPrecio() {
+        public BigDecimal getPrecio() {
             return precio;
         }
 
-        public void setPrecio(Double precio) {
+        public void setPrecio(BigDecimal precio) {
             this.precio = precio;
         }
 
