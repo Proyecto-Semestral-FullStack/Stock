@@ -2,6 +2,7 @@ package cl.dsy1103.ms_stock.config;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.client.loadbalancer.LoadBalanced;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
@@ -29,24 +30,13 @@ import java.time.temporal.ChronoUnit;
 public class CatalogoClient {
 
     private final WebClient webClient;
-
-    // Valores inyectados desde application.properties
-    @Value("${app.catalogo.url}")
-    private String catalogoUrl;
-
-    @Value("${app.catalogo.timeout}")
-    private long timeoutSegundos;
-
-    @Value("${app.catalogo.endpoint.producto-por-id}")
-    private String endpointProductoPorId;
-
     /**
-     * Constructor que recibe WebClient inyectado por Spring.
+     * Constructor que recibe el builder balanceado y la URL lógica desde properties.
      */
-    public CatalogoClient(WebClient webClient) {
-        this.webClient = webClient;
+    public CatalogoClient(@LoadBalanced WebClient.Builder webClientBuilder,
+                          @Value("${catalogo.service.url}") String catalogoUrl) {
+        this.webClient = webClientBuilder.baseUrl(catalogoUrl).build();
     }
-
     /**
      * Obtener producto de ms-catalogo.
      *
@@ -65,33 +55,26 @@ public class CatalogoClient {
         log.debug("Consultando ms-catalogo para producto ID: {}", productoId);
 
         try {
-            // Construir URL dinámica reemplazando {id}
-            String uri = endpointProductoPorId.replace("{id}", productoId.toString());
-            String urlCompleta = catalogoUrl + uri;
-
-            log.debug("URL construida: {}", urlCompleta);
-
+            // La URI se construye directamente sobre la base configurada (lb://ms-catalogo)
             ProductoDTO producto = webClient
                     .get()
-                    .uri(urlCompleta)  // URL completa: http://ms-catalogo/catalogo/productos/5
-                    .retrieve()         // Ejecutar request
-                    .bodyToMono(ProductoDTO.class)  // Convertir JSON a ProductoDTO
-                    .timeout(Duration.of(timeoutSegundos, ChronoUnit.SECONDS))  // Timeout
-                    .retry(2)  // Reintentar 2 veces si falla
-                    .block();  // Esperar la respuesta (bloqueante)
+                    .uri("/api/productos/{id}", productoId)
+                    .retrieve()
+                    .bodyToMono(ProductoDTO.class)
+                    .timeout(Duration.of(5, ChronoUnit.SECONDS))
+                    .retry(2)
+                    .block();
 
             log.info("Producto obtenido correctamente de ms-catalogo: {}", productoId);
             return producto;
 
         } catch (WebClientResponseException.NotFound e) {
-            // ms-catalogo devolvió 404 (producto no existe)
             log.warn("Producto {} no encontrado en ms-catalogo", productoId);
             throw new CatalogoException(
                     "Producto con ID " + productoId + " no encontrado en catálogo"
             );
 
         } catch (WebClientResponseException e) {
-            // ms-catalogo devolvió otro error (401, 403, 500, etc)
             log.error("Error en ms-catalogo (HTTP {}): {}",
                     e.getStatusCode(),
                     e.getResponseBodyAsString()
@@ -102,7 +85,6 @@ public class CatalogoClient {
             );
 
         } catch (Exception e) {
-            // Timeout, conexión rechazada, Eureka no resolvió el nombre, etc.
             log.error("Error comunicándose con ms-catalogo", e);
             throw new CatalogoException(
                     "No se puede conectar con ms-catalogo: " + e.getMessage(),
@@ -110,6 +92,7 @@ public class CatalogoClient {
             );
         }
     }
+
 
     /**
      * DTO para recibir respuesta JSON de ms-catalogo.

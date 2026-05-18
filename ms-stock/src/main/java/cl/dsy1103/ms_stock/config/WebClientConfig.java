@@ -17,8 +17,9 @@ import org.springframework.web.reactive.function.client.WebClient;
  * - Integramos con Eureka (descubrimiento de servicios)
  * - Definimos timeouts
  */
-@Configuration
 @Slf4j
+
+@Configuration
 public class WebClientConfig {
 
     /**
@@ -38,14 +39,10 @@ public class WebClientConfig {
      */
     @Bean
     @LoadBalanced // ← ESTO es crucial para que Eureka funcione
-    public WebClient webClient() {
-        log.info("Inicializando WebClient con Eureka LoadBalancer");
-
-        return WebClient.builder()
-                // No especificamos baseUrl porque cada servicio tiene su URL
-                // Los services especificarán la URL completa
-                .build();
-    }
+    public WebClient.Builder loadBalancedWebClientBuilder() {
+            log.info("Creando WebClient.Builder con soporte de balanceo de carga (Eureka)");
+            return WebClient.builder();
+        }
 
     /**
      * ALTERNATIVA: WebClient SIN LoadBalancer (si NO usas Eureka).
